@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ask — send a prompt to an LLM API from the command line
+# Dependencies: curl, jq
+# Environment variables: ASK_API_URL, ASK_MODEL, ASK_API_KEY
+
+set -euo pipefail
+
+: ${ASK_API_URL:?"ASK_API_URL is not set"}
+: ${ASK_MODEL:?"ASK_MODEL is not set"}
+: ${ASK_API_KEY:?"ASK_API_KEY is not set"}
+
+prompt=""
+
+if [ ! -t 0 ]; then
+    piped=$(cat)
+    prompt="$piped"
+fi
+
+if [ "$#" -gt 0 ]; then
+    args_prompt="$*"
+    if [ -n "$prompt" ]; then
+        prompt="$args_prompt $prompt"
+    else
+        prompt="$args_prompt"
+    fi
+fi
+
+if [ -z "$prompt" ]; then
+    echo "Usage: ask [prompt...]" >&2
+    echo "       echo \"text\" | ask [prompt...]" >&2
+    exit 1
+fi
+
+payload=$(jq -n \
+    --arg model "$ASK_MODEL" \
+    --arg prompt "$prompt" \
+    '{
+        model: $model,
+        messages: [
+            {
+                role: "system",
+                content: "You are a CLI tool. Output plain text only. No yapping. Keep the output concise."
+            },
+            {
+                role: "user",
+                content: $prompt
+            }
+        ]
+    }')
+
+curl "$ASK_API_URL" -s \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $ASK_API_KEY" \
+    -d "$payload" \
+    | jq -r '.choices[0].message.content'
